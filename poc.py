@@ -61,7 +61,7 @@ def get_blurred_pixel_value(original_image, width, height, x, y, kernel_size=3):
     return (avg_r, avg_g, avg_b)
     return (0, 0, 0)
 
-
+@timing_decorator
 def draw_unmatched_pixels(input_image_path, frame_one, first_center_x, first_center_y, frame_two, second_center_x, second_center_y):
     console = Console()
     try:
@@ -83,28 +83,33 @@ def draw_unmatched_pixels(input_image_path, frame_one, first_center_x, first_cen
                 sx = (x + second_center_x - first_center_x)
                 sy = (y + second_center_y - first_center_y)
 
+                pixels_out[x, y] = frame_one[y][x]
+
                 if sx >= 0 and sx < width and sy >= 0 and sy < height:
                     dif = abs(frame_one[y][x][0] - frame_two[sy][sx][0])
                     + abs(frame_one[y][x][1] - frame_two[sy][sx][1])
                     + abs(frame_one[y][x][2] - frame_two[sy][sx][2])
                     if dif > 15:
-                        # pixels_out[x, y] = (255, 0, 0)
-                        pixels_out[x, y] = frame_one[y][x]
                         flag[y][x] = True
-                    else:
-                        pixels_out[x, y] = frame_one[y][x]
-                else:
-                    # pass
-                    pixels_out[x, y] = frame_one[y][x]
+                    
 
         out_img = Image.new(img.mode, img.size)
         out_pixels_out = out_img.load()
 
         for y in range(height):
             for x in range(width):
-                if flag[y][x]:
+                cnt_tot = 0
+                cnt_blur = 0
+                for i in range(-3, 4, 1):
+                    for j in range(-3, 4, 1):
+                        if 0 <= x + i < width and 0 <= y + j < height:
+                            cnt_tot += 1
+                            if flag[y + j][x + i]:
+                                cnt_blur += 1
+                if cnt_tot < 2.5 * cnt_blur:
                     # pass
-                    out_pixels_out[x, y] = get_blurred_pixel_value(pixels_out, width, height, x, y, kernel_size=19)
+                    # out_pixels_out[x, y] = get_blurred_pixel_value(pixels_out, width, height, x, y, kernel_size=19)
+                    out_pixels_out[x, y] = (0, 0, 0)
                 else:
                     out_pixels_out[x, y] = pixels_out[x, y]
         out_img.show(title="Image Modified")
@@ -354,5 +359,3 @@ if __name__ == "__main__":
     # draw_square_and_open(FRAME_2, mx, my, square_side=60, outline_width=2)
     # draw_square_and_open(FRAME_2, x, y, square_side=200)
     draw_unmatched_pixels(FRAME_1, frame_one, x, y, frame_two, mx, my)
-    
-
