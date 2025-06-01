@@ -215,7 +215,7 @@ if __name__ == "__main__":
         image_file = input("Enter path to your image: ")
 
 
-    image_file = "portrait.png" 
+    image_file = "Portrait_1.jpg" 
     # --- 1. Demonstrate your original pixel printing function ---
     print("\n--- Demonstrating Individual Pixel Printing ---")
     extract_and_print_pixels_with_animation(image_file)
