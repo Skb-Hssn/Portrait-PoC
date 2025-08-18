@@ -77,6 +77,9 @@ def draw_unmatched_pixels(input_image_path, frame_one, first_center_x, first_cen
 
         flag = [[False for _ in range(width)] for _ in range(height)]
 
+        out_img = Image.new(img.mode, img.size)
+        out_pixels_out = out_img.load()
+
         console.print(f"[cyan]Applying modification...[/cyan]")
         for y in range(height):
             for x in range(width):
@@ -89,12 +92,11 @@ def draw_unmatched_pixels(input_image_path, frame_one, first_center_x, first_cen
                     dif = abs(frame_one[y][x][0] - frame_two[sy][sx][0])
                     + abs(frame_one[y][x][1] - frame_two[sy][sx][1])
                     + abs(frame_one[y][x][2] - frame_two[sy][sx][2])
-                    if dif > 15:
+                    if dif > 0:
                         flag[y][x] = True
-                    
-
-        out_img = Image.new(img.mode, img.size)
-        out_pixels_out = out_img.load()
+                        out_pixels_out[x, y] = (0, 0, 0)
+                    else:                    
+                        out_pixels_out[x, y] = pixels_out[x, y]
 
         for y in range(height):
             for x in range(width):
@@ -135,8 +137,12 @@ def extract_pixels_pillow(image_path):
         
         for y in range(0, height):
             for x in range(0, width):
-                pixel = pixel_data[x, y]
-                pixel_values[y][x] = pixel_data[x, y]
+                try:
+                    pixel = pixel_data[x, y]
+                    pixel_values[y][x] = pixel_data[x, y]
+                except:
+                    # print(x, y)
+                    pass
 
         return pixel_values  
 
@@ -318,7 +324,7 @@ def match(frame_one, frame_two, second_start_x, second_start_y, first_start_x, f
             # printHex(frame_two[y + second_start_y][x + second_start_x])
             # print()
 
-            if abs(dif) < 10:
+            if abs(dif) < 25:
                 match_cnt += 1
                 # return False
             
@@ -340,22 +346,23 @@ def find_position_in_first_image(frame_one, frame_two, start_x, start_y):
             if min_val > i - j:
                 min_val = i - j
                 yy, xx = y + 30, x + 30
-    print("[Min val, yy, xx] :", min_val, yy, xx)
+    print("[Min val, xx, yy] :", min_val, xx, yy)
     return xx, yy
 
 
-FRAME_1 = 'Portrait_1.jpg'
-FRAME_2 = 'Portrait_2.jpg'
+FRAME_2 = 'Imu_2.jpg'
+FRAME_1 = 'output_image_textured.png'
 
+# FRAME_1 = 'Imu_1.jpg'
+# FRAME_2 = 'Imu_2.jpg'
 
 if __name__ == "__main__":
     x, y = get_coordinates_from_image(FRAME_1)
     print(x, y)
     frame_one = extract_pixels_pillow(FRAME_1)
     frame_two = extract_pixels_pillow(FRAME_2)
-    # modify_and_save_image('Portrait_1.jpg', 'Portrait_1_modified.jpg', to_grayscale_avg)
+
     mx, my = find_position_in_first_image(frame_one, frame_two, x - 30, y - 30)
     print("Match : ", mx, my)
-    # draw_square_and_open(FRAME_2, mx, my, square_side=60, outline_width=2)
-    # draw_square_and_open(FRAME_2, x, y, square_side=200)
+
     draw_unmatched_pixels(FRAME_1, frame_one, x, y, frame_two, mx, my)

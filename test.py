@@ -1,70 +1,78 @@
 import tkinter as tk
 from PIL import Image, ImageTk, ImageDraw
 
-# --- 1. Setup ---
-img = Image.new('RGB', (400, 300), 'black')
-out_img = Image.new(img.mode, img.size)
-BACKGROUND_COLOR = (0, 0, 0) # Define background color for erasing
+# --- 1. Define and load image files ---
+
+# HARDCODE YOUR MAIN IMAGE PATH HERE
+file_path = "Imu_1.jpg"
+# HARDCODE YOUR TEXTURE IMAGE PATH HERE
+texture_file_path = "Imu_2.jpg"
+
+# Load the main background image
+try:
+    # 'img' will hold the pristine original image for erasing
+    img = Image.open(file_path).convert('RGB')
+    # 'out_img' is the canvas we will draw on
+    out_img = img.copy()
+except Exception as e:
+    print(f"Error opening main image file '{file_path}': {e}")
+    exit()
+
+# Load the texture image to be used for filling
+try:
+    texture_img = Image.open(texture_file_path).convert('RGB')
+    # For performance, get pixel access object and dimensions once
+    texture_pixels = texture_img.load()
+    texture_width, texture_height = texture_img.size
+except Exception as e:
+    print(f"Error opening texture image file '{texture_file_path}': {e}")
+    exit()
+
 
 # --- 2. State variables ---
-current_color = (255, 255, 255) # Drawing/filling color is white
+current_color = (255, 255, 255) # Color for points and lines
 drawn_points = []
-current_mode = "draw" # Mode can be "draw" or "erase"
+current_mode = "draw"
 
-# --- NEW: Manual Scan-line Polygon Fill Function ---
-def manual_fill_polygon(image, vertices, color):
+# --- MODIFIED: Manual Scan-line Polygon Fill Function ---
+def manual_fill_polygon(image, vertices, tex_pixels, tex_width, tex_height):
     """
-    Fills a polygon on a PIL image using a manual scan-line algorithm.
-    This gives pixel-by-pixel control for custom logic.
+    Fills a polygon by mapping pixels from a texture image.
     """
-    # Get a pixel access object for efficient writing
     pixels = image.load()
-    
-    # 1. Find the Y-range of the polygon to avoid scanning the whole image
     min_y = min(v[1] for v in vertices)
     max_y = max(v[1] for v in vertices)
 
-    # 2. Iterate through each scan-line (each horizontal row of pixels)
     for y in range(min_y, max_y + 1):
         intersections = []
-        # 3. Find all intersection points for the current scan-line
         for i in range(len(vertices)):
             p1 = vertices[i]
-            p2 = vertices[(i + 1) % len(vertices)] # Wrap around to the first vertex
-
-            # Check if the edge crosses the scan-line y
+            p2 = vertices[(i + 1) % len(vertices)]
             if (p1[1] <= y < p2[1]) or (p2[1] <= y < p1[1]):
-                # Avoid division by zero for horizontal lines
                 if p1[1] != p2[1]:
-                    # Calculate the x-intersection using linear interpolation
                     x = p1[0] + (y - p1[1]) * (p2[0] - p1[0]) / (p2[1] - p1[1])
                     intersections.append(x)
-        
-        # 4. Sort the intersections from left to right
         intersections.sort()
-
-        # 5. Fill the pixels between pairs of intersections
         for i in range(0, len(intersections), 2):
-            # Ensure we have a valid pair
             if i + 1 < len(intersections):
                 x_start = round(intersections[i])
                 x_end = round(intersections[i+1])
-                
                 for x in range(x_start, x_end + 1):
-                    # --- CUSTOM LOGIC CAN GO HERE ---
-                    # For example, you could create a pattern:
-                    # if (x + y) % 2 == 0:
-                    #     pixels[x, y] = color
-                    # else:
-                    #     pixels[x, y] = (128, 128, 128) # A different color
-                    
-                    # Standard fill logic:
-                    pixels[x, y] = color
+                    # --- THIS IS THE KEY LOGIC CHANGE ---
+                    # Use modulo to tile the texture image
+                    try:
+                        tex_x = (x + 568 - 614)
+                        tex_y = (y + 317 - 309)
+                        
+                        # Get the pixel from the texture and apply it to the main image
+                        pixels[x, y] = tex_pixels[tex_x, tex_y]
+                    except Exception as e:
+                        print("Error: ", tex_x, tex_y)
 
 
 # --- 3. Create the GUI Window and Widgets ---
 root = tk.Tk()
-root.title("Polygon Drawer")
+root.title("Image Texturizer")
 
 # --- Button functions ---
 def set_mode_draw():
@@ -79,15 +87,13 @@ def set_mode_erase():
     image_label.config(cursor="dotbox")
     print("Mode set to: ERASE")
 
-# MODIFIED: This function now gathers vertices and calls the manual filler
+# MODIFIED: This function now calls the manual filler with texture data
 def fill_polygon():
-    """Constructs the polygon shape and fills it using the manual algorithm."""
+    """Constructs the polygon and fills it using the texture image."""
     if len(drawn_points) < 2:
-        print("Not enough points to form a polygon to fill. Need at least 2.")
+        print("Not enough points to form a polygon. Need at least 2.")
         return
-
-    print("Constructing polygon and calling manual fill...")
-    
+    print("Filling polygon with texture...")
     image_height = out_img.height
     last_point = drawn_points[-1]
     first_point = drawn_points[0]
@@ -99,20 +105,16 @@ def fill_polygon():
     polygon_vertices.append(last_ground_point)
     polygon_vertices.append(first_ground_point)
 
-    # Call our new manual fill function
-    manual_fill_polygon(out_img, polygon_vertices, current_color)
+    # Call the manual fill function with the texture data
+    manual_fill_polygon(out_img, polygon_vertices, texture_pixels, texture_width, texture_height)
 
-    # After drawing, update the Tkinter display.
     new_tk_image = ImageTk.PhotoImage(out_img)
     image_label.config(image=new_tk_image)
     image_label.image = new_tk_image
 
 def draw_lines():
     """Draws lines connecting the points sequentially and to the ground."""
-    if not drawn_points:
-        print("Not enough points to draw. Need at least 1.")
-        return
-    print(f"Drawing lines for {len(drawn_points)} points...")
+    if not drawn_points: return
     draw = ImageDraw.Draw(out_img)
     image_height = out_img.height
     first_point = drawn_points[0]
@@ -128,7 +130,7 @@ def draw_lines():
     image_label.config(image=new_tk_image)
     image_label.image = new_tk_image
 
-# --- Create a Frame to hold the buttons ---
+# --- Create UI Frames and Buttons ---
 button_frame = tk.Frame(root)
 button_frame.pack(pady=5)
 draw_button = tk.Button(button_frame, text="Draw Mode", command=set_mode_draw)
@@ -149,23 +151,21 @@ image_label.pack()
 def on_image_click(event):
     x, y = event.x, event.y
     image_was_modified = False
-    pixels = out_img.load()
+    pixels_out = out_img.load()
     if current_mode == "draw":
         drawn_points.append((x, y))
-        pixels[x, y] = current_color
+        pixels_out[x, y] = current_color
         image_was_modified = True
     elif current_mode == "erase":
         erase_radius = 3
-        points_found_to_erase = []
         for point in drawn_points[:]:
             px, py = point
             if (x - erase_radius <= px <= x + erase_radius) and \
                (y - erase_radius <= py <= y + erase_radius):
                 drawn_points.remove(point)
-                pixels[px, py] = BACKGROUND_COLOR
+                original_pixel = img.getpixel((px, py))
+                pixels_out[px, py] = original_pixel
                 image_was_modified = True
-                points_found_to_erase.append(point)
-        if image_was_modified: print(f"Erased {len(points_found_to_erase)} point(s) near ({x}, {y})")
     if image_was_modified:
         new_tk_image = ImageTk.PhotoImage(out_img)
         image_label.config(image=new_tk_image)
@@ -175,7 +175,7 @@ def on_image_click(event):
 image_label.bind("<Button-1>", on_image_click)
 
 # --- 6. Run the Application ---
-print("Tkinter window is running... (Press Ctrl+C in this terminal to exit)")
+print(f"Loaded '{file_path}' with texture '{texture_file_path}'. Window is running...")
 set_mode_draw()
 try:
     root.mainloop()
@@ -184,8 +184,8 @@ except KeyboardInterrupt:
 
 # --- 7. Final actions ---
 try:
-    out_img.save("output_image_polygon_manual.png")
-    print("\nModified image saved as 'output_image_polygon_manual.png'")
+    out_img.save("output_image_textured.png")
+    print("\nModified image saved as 'output_image_textured.png'")
 except Exception as e:
     print(f"Could not save the image. Error: {e}")
 print("\n--- Final list of all points drawn ---\n", drawn_points)
