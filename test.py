@@ -4,24 +4,21 @@ from PIL import Image, ImageTk, ImageDraw
 # --- 1. Define and load image files ---
 
 # HARDCODE YOUR MAIN IMAGE PATH HERE
-file_path = "Imu_1.jpg"
+file_path = "frame_00003.png"
 # HARDCODE YOUR TEXTURE IMAGE PATH HERE
-texture_file_path = "Imu_2.jpg"
+texture_file_path = "frame_00001.png"
 
 # Load the main background image
 try:
-    # 'img' will hold the pristine original image for erasing
     img = Image.open(file_path).convert('RGB')
-    # 'out_img' is the canvas we will draw on
     out_img = img.copy()
 except Exception as e:
     print(f"Error opening main image file '{file_path}': {e}")
     exit()
 
-# Load the texture image to be used for filling
+# Load the texture image
 try:
     texture_img = Image.open(texture_file_path).convert('RGB')
-    # For performance, get pixel access object and dimensions once
     texture_pixels = texture_img.load()
     texture_width, texture_height = texture_img.size
 except Exception as e:
@@ -34,11 +31,9 @@ current_color = (255, 255, 255) # Color for points and lines
 drawn_points = []
 current_mode = "draw"
 
-# --- MODIFIED: Manual Scan-line Polygon Fill Function ---
+# --- Manual Scan-line Polygon Fill Function ---
 def manual_fill_polygon(image, vertices, tex_pixels, tex_width, tex_height):
-    """
-    Fills a polygon by mapping pixels from a texture image.
-    """
+    """Fills a polygon by mapping pixels from a texture image."""
     pixels = image.load()
     min_y = min(v[1] for v in vertices)
     max_y = max(v[1] for v in vertices)
@@ -58,36 +53,50 @@ def manual_fill_polygon(image, vertices, tex_pixels, tex_width, tex_height):
                 x_start = round(intersections[i])
                 x_end = round(intersections[i+1])
                 for x in range(x_start, x_end + 1):
-                    # --- THIS IS THE KEY LOGIC CHANGE ---
-                    # Use modulo to tile the texture image
+                    # Your custom offset logic
                     try:
-                        tex_x = (x + 568 - 614)
-                        tex_y = (y + 317 - 309)
-                        
-                        # Get the pixel from the texture and apply it to the main image
-                        pixels[x, y] = tex_pixels[tex_x, tex_y]
-                    except Exception as e:
-                        print("Error: ", tex_x, tex_y)
+                        frame_one_x = 555
+                        frame_one_y = 567
+                        frame_two_x = 555
+                        frame_two_y = 568
 
+                        tex_x = (x + frame_two_x - frame_one_x)
+                        tex_y = (y + frame_two_y - frame_one_y)
+                        # Ensure texture coordinates are within bounds for this example
+                        # If you want tiling, use the modulo operator: tex_x % tex_width
+                        if 0 <= tex_x < tex_width and 0 <= tex_y < tex_height:
+                           pixels[x, y] = tex_pixels[tex_x, tex_y]
+                    except IndexError:
+                        # This can happen if offsets go out of bounds. Ignore for now.
+                        pass
+                    except Exception as e:
+                        print(f"Error processing pixel ({x},{y}): {e}")
+
+# --- Helper function to update the canvas image ---
+def update_canvas_image():
+    """Creates a new PhotoImage and updates the canvas."""
+    new_tk_image = ImageTk.PhotoImage(out_img)
+    canvas.itemconfig(canvas_image_item, image=new_tk_image)
+    # CRITICAL: Keep a reference to the new image object
+    canvas.image = new_tk_image
 
 # --- 3. Create the GUI Window and Widgets ---
 root = tk.Tk()
-root.title("Image Texturizer")
+root.title("Image Texturizer (Scrollable)")
 
 # --- Button functions ---
 def set_mode_draw():
     global current_mode
     current_mode = "draw"
-    image_label.config(cursor="arrow")
+    canvas.config(cursor="arrow")
     print("Mode set to: DRAW")
 
 def set_mode_erase():
     global current_mode
     current_mode = "erase"
-    image_label.config(cursor="dotbox")
+    canvas.config(cursor="dotbox")
     print("Mode set to: ERASE")
 
-# MODIFIED: This function now calls the manual filler with texture data
 def fill_polygon():
     """Constructs the polygon and fills it using the texture image."""
     if len(drawn_points) < 2:
@@ -105,12 +114,8 @@ def fill_polygon():
     polygon_vertices.append(last_ground_point)
     polygon_vertices.append(first_ground_point)
 
-    # Call the manual fill function with the texture data
     manual_fill_polygon(out_img, polygon_vertices, texture_pixels, texture_width, texture_height)
-
-    new_tk_image = ImageTk.PhotoImage(out_img)
-    image_label.config(image=new_tk_image)
-    image_label.image = new_tk_image
+    update_canvas_image()
 
 def draw_lines():
     """Draws lines connecting the points sequentially and to the ground."""
@@ -126,13 +131,12 @@ def draw_lines():
         last_point = drawn_points[-1]
         last_ground_point = (last_point[0], image_height - 1)
         draw.line((last_point, last_ground_point), fill=current_color, width=1)
-    new_tk_image = ImageTk.PhotoImage(out_img)
-    image_label.config(image=new_tk_image)
-    image_label.image = new_tk_image
+    update_canvas_image()
 
 # --- Create UI Frames and Buttons ---
 button_frame = tk.Frame(root)
-button_frame.pack(pady=5)
+button_frame.pack(side="top", fill="x", pady=5) # Buttons at the top
+
 draw_button = tk.Button(button_frame, text="Draw Mode", command=set_mode_draw)
 draw_button.pack(side=tk.LEFT, padx=10)
 erase_button = tk.Button(button_frame, text="Erase Mode", command=set_mode_erase)
@@ -142,14 +146,43 @@ fill_button.pack(side=tk.LEFT, padx=10)
 draw_lines_button = tk.Button(button_frame, text="Draw Lines", command=draw_lines)
 draw_lines_button.pack(side=tk.LEFT, padx=10)
 
-# --- Setup the image display ---
+# --- NEW: Setup for Scrollable Canvas ---
+# A frame will hold the canvas and scrollbars
+container_frame = tk.Frame(root)
+container_frame.pack(fill="both", expand=True)
+
+canvas = tk.Canvas(container_frame)
+v_scrollbar = tk.Scrollbar(container_frame, orient="vertical", command=canvas.yview)
+h_scrollbar = tk.Scrollbar(container_frame, orient="horizontal", command=canvas.xview)
+canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+
+canvas.grid(row=0, column=0, sticky="nsew")
+v_scrollbar.grid(row=0, column=1, sticky="ns")
+h_scrollbar.grid(row=1, column=0, sticky="ew")
+
+container_frame.grid_rowconfigure(0, weight=1)
+container_frame.grid_columnconfigure(0, weight=1)
+
+# --- Load image onto the canvas ---
+img_width, img_height = out_img.size
 tk_image = ImageTk.PhotoImage(out_img)
-image_label = tk.Label(root, image=tk_image)
-image_label.pack()
+canvas_image_item = canvas.create_image(0, 0, anchor="nw", image=tk_image)
+canvas.image = tk_image # Keep reference
+canvas.config(scrollregion=canvas.bbox("all"))
+
+# Set initial window size, capped by screen dimensions
+screen_width = root.winfo_screenwidth()
+screen_height = root.winfo_screenheight()
+window_width = min(img_width, screen_width - 50)
+window_height = min(img_height, screen_height - 100) # -100 to account for buttons/title bar
+root.geometry(f"{window_width}x{window_height}")
 
 # --- 4. The Click Handler Function ---
 def on_image_click(event):
-    x, y = event.x, event.y
+    # KEY CHANGE: Convert window coordinates to full canvas coordinates
+    x = int(canvas.canvasx(event.x))
+    y = int(canvas.canvasy(event.y))
+    
     image_was_modified = False
     pixels_out = out_img.load()
     if current_mode == "draw":
@@ -167,12 +200,10 @@ def on_image_click(event):
                 pixels_out[px, py] = original_pixel
                 image_was_modified = True
     if image_was_modified:
-        new_tk_image = ImageTk.PhotoImage(out_img)
-        image_label.config(image=new_tk_image)
-        image_label.image = new_tk_image
+        update_canvas_image()
 
 # --- 5. Bind the click event ---
-image_label.bind("<Button-1>", on_image_click)
+canvas.bind("<Button-1>", on_image_click)
 
 # --- 6. Run the Application ---
 print(f"Loaded '{file_path}' with texture '{texture_file_path}'. Window is running...")

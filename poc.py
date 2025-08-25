@@ -23,7 +23,7 @@ def printHex(pixel):
     print(f'{"".join([f"{channel_value:02x}" for channel_value in pixel])}', end=" ")
 
 
-def get_blurred_pixel_value(original_image, width, height, x, y, kernel_size=3):
+def get_blurred_pixel_value(original_image, width, height, x, y, kernel_size=11):
     if kernel_size % 2 == 0:
         raise ValueError("Kernel size must be an odd number.")
     
@@ -61,6 +61,67 @@ def get_blurred_pixel_value(original_image, width, height, x, y, kernel_size=3):
     return (avg_r, avg_g, avg_b)
     return (0, 0, 0)
 
+
+import math
+
+def gaussian_kernel(radius, sigma=None):
+    """Generate a 1D Gaussian kernel."""
+    if sigma is None:
+        sigma = radius / 2.0  # rule of thumb
+    kernel = [math.exp(-(x**2) / (2 * sigma**2)) for x in range(-radius, radius+1)]
+    s = sum(kernel)
+    return [v/s for v in kernel]  # normalize
+
+
+def gaussian_blur(image, radius=2):
+    """
+    Apply a Gaussian blur to a 2D RGB image using separable convolution.
+    
+    Args:
+        image (list[list[tuple]]): 2D array of pixels (r, g, b).
+        radius (int): blur radius.
+    
+    Returns:
+        list[list[tuple]]: blurred image.
+    """
+    height = len(image)
+    width = len(image[0])
+    kernel = gaussian_kernel(radius)
+    k_len = len(kernel)
+
+    # Horizontal pass
+    temp = [[(0, 0, 0) for _ in range(width)] for _ in range(height)]
+    for y in range(height):
+        for x in range(width):
+            r_total = g_total = b_total = 0.0
+            for k in range(k_len):
+                dx = k - radius
+                nx = min(max(x + dx, 0), width - 1)
+                r, g, b = image[y][nx]
+                weight = kernel[k]
+                r_total += r * weight
+                g_total += g * weight
+                b_total += b * weight
+            temp[y][x] = (r_total, g_total, b_total)
+
+    # Vertical pass
+    blurred = [[(0, 0, 0) for _ in range(width)] for _ in range(height)]
+    for y in range(height):
+        for x in range(width):
+            r_total = g_total = b_total = 0.0
+            for k in range(k_len):
+                dy = k - radius
+                ny = min(max(y + dy, 0), height - 1)
+                r, g, b = temp[ny][x]
+                weight = kernel[k]
+                r_total += r * weight
+                g_total += g * weight
+                b_total += b * weight
+            blurred[y][x] = (int(r_total), int(g_total), int(b_total))
+
+    return blurred
+
+
 @timing_decorator
 def draw_unmatched_pixels(input_image_path, frame_one, first_center_x, first_center_y, frame_two, second_center_x, second_center_y):
     console = Console()
@@ -80,6 +141,8 @@ def draw_unmatched_pixels(input_image_path, frame_one, first_center_x, first_cen
         out_img = Image.new(img.mode, img.size)
         out_pixels_out = out_img.load()
 
+        blurred_frame_one = gaussian_blur(frame_one, 5)
+
         console.print(f"[cyan]Applying modification...[/cyan]")
         for y in range(height):
             for x in range(width):
@@ -94,26 +157,29 @@ def draw_unmatched_pixels(input_image_path, frame_one, first_center_x, first_cen
                     + abs(frame_one[y][x][2] - frame_two[sy][sx][2])
                     if dif > 0:
                         flag[y][x] = True
-                        out_pixels_out[x, y] = (0, 0, 0)
+                        # out_pixels_out[x, y] = (0, 0, 0)
+                        out_pixels_out[x, y] = blurred_frame_one[y][x]
                     else:                    
                         out_pixels_out[x, y] = pixels_out[x, y]
 
-        for y in range(height):
-            for x in range(width):
-                cnt_tot = 0
-                cnt_blur = 0
-                for i in range(-3, 4, 1):
-                    for j in range(-3, 4, 1):
-                        if 0 <= x + i < width and 0 <= y + j < height:
-                            cnt_tot += 1
-                            if flag[y + j][x + i]:
-                                cnt_blur += 1
-                if cnt_tot < 2.5 * cnt_blur:
-                    # pass
-                    # out_pixels_out[x, y] = get_blurred_pixel_value(pixels_out, width, height, x, y, kernel_size=19)
-                    out_pixels_out[x, y] = (0, 0, 0)
-                else:
-                    out_pixels_out[x, y] = pixels_out[x, y]
+        # for y in range(height):
+        #     for x in range(width):
+        #         if flag[y][x]:
+        #             out_pixels_out[x, y] = get_blurred_pixel_value(pixels_out, width, height, x, y)
+                # cnt_tot = 0
+                # cnt_blur = 0
+                # for i in range(-3, 4, 1):
+                #     for j in range(-3, 4, 1):
+                #         if 0 <= x + i < width and 0 <= y + j < height:
+                #             cnt_tot += 1
+                #             if flag[y + j][x + i]:
+                #                 cnt_blur += 1
+                # if cnt_tot < 2.5 * cnt_blur:
+                #     # pass
+                #     # out_pixels_out[x, y] = get_blurred_pixel_value(pixels_out, width, height, x, y, kernel_size=19)
+                #     out_pixels_out[x, y] = (0, 0, 0)
+                # else:
+                #     out_pixels_out[x, y] = pixels_out[x, y]
         out_img.show(title="Image Modified")
         
     except FileNotFoundError:
@@ -324,7 +390,7 @@ def match(frame_one, frame_two, second_start_x, second_start_y, first_start_x, f
             # printHex(frame_two[y + second_start_y][x + second_start_x])
             # print()
 
-            if abs(dif) < 25:
+            if abs(dif) < 15:
                 match_cnt += 1
                 # return False
             
@@ -340,8 +406,8 @@ def find_position_in_first_image(frame_one, frame_two, start_x, start_y):
 
     yy, xx = -1, -1
 
-    for y in range(start_y - 100, start_y + 100 + 1):
-        for x in range(start_x - 100, start_x + 100 + 1):
+    for y in range(start_y - 20, start_y + 20 + 1):
+        for x in range(start_x - 40, start_x + 40 + 1):
             [i, j] = match(frame_one, frame_two, x, y, start_x, start_y)
             if min_val > i - j:
                 min_val = i - j
@@ -350,7 +416,7 @@ def find_position_in_first_image(frame_one, frame_two, start_x, start_y):
     return xx, yy
 
 
-FRAME_2 = 'Imu_2.jpg'
+FRAME_2 = 'frame_00001.png'
 FRAME_1 = 'output_image_textured.png'
 
 # FRAME_1 = 'Imu_1.jpg'
@@ -364,5 +430,7 @@ if __name__ == "__main__":
 
     mx, my = find_position_in_first_image(frame_one, frame_two, x - 30, y - 30)
     print("Match : ", mx, my)
+
+    draw_square_and_open(FRAME_2, mx, my, square_side=60, outline_color="blue", outline_width=2)
 
     draw_unmatched_pixels(FRAME_1, frame_one, x, y, frame_two, mx, my)
